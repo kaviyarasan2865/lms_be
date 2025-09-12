@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from .models import (
-    User, College, CollegeAdmin, Batch, Student, Faculty, Subject, 
+    User, College, CollegeAdmin, Batch, AcademicYear, Student, Faculty, Subject, 
     Module, QuestionBank, BulkUploadTemplate
 )
 
@@ -96,21 +96,68 @@ class CollegeSerializer(serializers.ModelSerializer):
         ]
 
 
+class AcademicYearSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AcademicYear
+        fields = [
+            'id', 'year', 'label', 'start_date', 'end_date', 
+            'auto_promote', 'editable', 'created_at', 'updated_at'
+        ]
+
 class BatchSerializer(serializers.ModelSerializer):
     college_name = serializers.CharField(source='college.name', read_only=True)
     student_count = serializers.SerializerMethodField()
+    academic_years = AcademicYearSerializer(many=True, read_only=True)
     
     class Meta:
         model = Batch
         fields = [
             'id', 'college', 'college_name', 'course', 'year_of_joining', 'name',
-            'academic_year', 'default_label', 'start_date', 'end_date',
-            'auto_promote', 'editable', 'auto_promote_after_days', 'student_count',
+            'auto_promote_after_days', 'student_count', 'academic_years',
             'created_at', 'updated_at'
         ]
     
     def get_student_count(self, obj):
         return obj.students.count()
+
+class BatchCreateSerializer(serializers.ModelSerializer):
+    academic_years = AcademicYearSerializer(many=True, write_only=True)
+    
+    class Meta:
+        model = Batch
+        fields = [
+            'college', 'course', 'year_of_joining', 'name',
+            'auto_promote_after_days', 'academic_years'
+        ]
+    
+    def create(self, validated_data):
+        academic_years_data = validated_data.pop('academic_years', [])
+        batch = Batch.objects.create(**validated_data)
+        
+        # Create academic years for the batch
+        for year_data in academic_years_data:
+            AcademicYear.objects.create(batch=batch, **year_data)
+        
+        return batch
+    
+    def update(self, instance, validated_data):
+        academic_years_data = validated_data.pop('academic_years', [])
+        
+        # Update batch fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update academic years if provided
+        if academic_years_data:
+            # Delete existing academic years
+            instance.academic_years.all().delete()
+            
+            # Create new academic years
+            for year_data in academic_years_data:
+                AcademicYear.objects.create(batch=instance, **year_data)
+        
+        return instance
 
 
 class SubjectSerializer(serializers.ModelSerializer):

@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
 app_name = 'accounts'
@@ -10,6 +11,7 @@ urlpatterns = [
     path('login/', views.login_user, name='login'),
     path('logout/', views.logout_user, name='logout'),
     path('profile/', views.user_profile, name='profile'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
     # College management
     path('colleges/', views.CollegeListCreateView.as_view(), name='college-list'),

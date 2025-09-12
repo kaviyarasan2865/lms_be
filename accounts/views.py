@@ -2,18 +2,20 @@ from rest_framework import status, generics, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
 from django.contrib.auth import authenticate
 from django.db import transaction
 from django.http import HttpResponse
 import csv
 import io
 from .models import (
-    User, College, CollegeAdmin, Batch, Student, Faculty, Subject, 
+    User, College, CollegeAdmin, Batch, AcademicYear, Student, Faculty, Subject, 
     Module, QuestionBank, BulkUploadTemplate
 )
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
-    CollegeSerializer, BatchSerializer, StudentSerializer, FacultySerializer, SubjectSerializer,
+    CollegeSerializer, BatchSerializer, BatchCreateSerializer, AcademicYearSerializer,
+    StudentSerializer, FacultySerializer, SubjectSerializer,
     ModuleSerializer, QuestionBankSerializer, BulkUploadTemplateSerializer,
     StudentRegistrationSerializer, FacultyRegistrationSerializer
 )
@@ -109,7 +111,7 @@ def user_profile(request):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.AllowAny])
 def logout_user(request):
     """
     Logout user (invalidate token)
@@ -124,10 +126,11 @@ def logout_user(request):
             'message': 'Successfully logged out'
         }, status=status.HTTP_200_OK)
     except Exception as e:
+        # Even if token blacklisting fails, we should still return success
+        # as the client has already cleared the tokens
         return Response({
-            'error': 'Logout failed',
-            'details': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
+            'message': 'Successfully logged out'
+        }, status=status.HTTP_200_OK)
 
 
 # College Management Views
@@ -154,8 +157,12 @@ class CollegeDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 # Batch Management Views
 class BatchListCreateView(generics.ListCreateAPIView):
-    serializer_class = BatchSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return BatchCreateSerializer
+        return BatchSerializer
 
     def get_queryset(self):
         if self.request.user.role == 'product_owner':
@@ -170,8 +177,12 @@ class BatchListCreateView(generics.ListCreateAPIView):
 
 
 class BatchDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = BatchSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return BatchCreateSerializer
+        return BatchSerializer
 
     def get_queryset(self):
         if self.request.user.role == 'product_owner':

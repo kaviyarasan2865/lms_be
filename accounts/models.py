@@ -49,7 +49,29 @@ class CollegeAdmin(models.Model):
 
 
 # -------------------------------------------------
-# 4. BATCH
+# 4. ACADEMIC YEAR
+# -------------------------------------------------
+class AcademicYear(models.Model):
+    batch = models.ForeignKey('Batch', on_delete=models.CASCADE, related_name="academic_years")
+    year = models.PositiveIntegerField()  # 1, 2, 3, 4
+    label = models.CharField(max_length=255, default="Year 1")
+    start_date = models.DateField()
+    end_date = models.DateField()
+    auto_promote = models.BooleanField(default=True)
+    editable = models.BooleanField(default=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+
+    class Meta:
+        unique_together = ("batch", "year")
+        ordering = ['year']
+
+    def __str__(self):
+        return f"{self.batch.name} - {self.label}"
+
+# -------------------------------------------------
+# 5. BATCH
 # -------------------------------------------------
 class Batch(models.Model):
     college = models.ForeignKey(College, on_delete=models.CASCADE, related_name="batches")
@@ -57,14 +79,6 @@ class Batch(models.Model):
 
     year_of_joining = models.PositiveIntegerField()
     name = models.CharField(max_length=255)
-
-    # Academic phase configuration (4 years default, customizable)
-    academic_year = models.PositiveIntegerField(default=1)
-    default_label = models.CharField(max_length=255, default="Year 1")
-    start_date = models.DateField()
-    end_date = models.DateField()
-    auto_promote = models.BooleanField(default=True)
-    editable = models.BooleanField(default=True)
 
     # Promotion settings
     auto_promote_after_days = models.PositiveIntegerField(default=365)
@@ -80,7 +94,7 @@ class Batch(models.Model):
 
 
 # -------------------------------------------------
-# 5. STUDENT
+# 6. STUDENT
 # -------------------------------------------------
 class Student(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="student_profile")
@@ -107,7 +121,7 @@ class Student(models.Model):
 
 
 # -------------------------------------------------
-# 6. FACULTY
+# 7. FACULTY
 # -------------------------------------------------
 class Faculty(models.Model):
     DESIGNATION_CHOICES = [
@@ -144,7 +158,7 @@ class Faculty(models.Model):
 
 
 # -------------------------------------------------
-# 7. SUBJECT (NEET PG subjects)
+# 8. SUBJECT (NEET PG subjects)
 # -------------------------------------------------
 class Subject(models.Model):
     college = models.ForeignKey(College, on_delete=models.CASCADE, related_name="subjects")
