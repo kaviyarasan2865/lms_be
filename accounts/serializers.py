@@ -1,7 +1,10 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, College, CollegeAdmin, Batch, Student, Faculty, Subject
+from .models import (
+    User, College, CollegeAdmin, Batch, Student, Faculty, Subject, 
+    Module, QuestionBank, BulkUploadTemplate
+)
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -87,51 +90,79 @@ class UserLoginSerializer(serializers.Serializer):
 class CollegeSerializer(serializers.ModelSerializer):
     class Meta:
         model = College
-        fields = ['id', 'name', 'code', 'course', 'created_at']
+        fields = [
+            'id', 'name', 'code', 'course', 'address', 'contact_email', 
+            'contact_phone', 'created_at', 'updated_at'
+        ]
 
 
 class BatchSerializer(serializers.ModelSerializer):
     college_name = serializers.CharField(source='college.name', read_only=True)
+    student_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Batch
         fields = [
             'id', 'college', 'college_name', 'course', 'year_of_joining', 'name',
             'academic_year', 'default_label', 'start_date', 'end_date',
-            'auto_promote', 'editable', 'auto_promote_after_days', 'created_at'
+            'auto_promote', 'editable', 'auto_promote_after_days', 'student_count',
+            'created_at', 'updated_at'
         ]
+    
+    def get_student_count(self, obj):
+        return obj.students.count()
 
 
 class SubjectSerializer(serializers.ModelSerializer):
+    college_name = serializers.CharField(source='college.name', read_only=True)
+    module_count = serializers.SerializerMethodField()
+    
     class Meta:
         model = Subject
-        fields = ['id', 'name', 'college']
+        fields = [
+            'id', 'name', 'code', 'description', 'college', 'college_name', 
+            'is_active', 'module_count', 'created_at', 'updated_at'
+        ]
+    
+    def get_module_count(self, obj):
+        return obj.modules.count()
 
 
 class StudentSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
     college_name = serializers.CharField(source='college.name', read_only=True)
     batch_name = serializers.CharField(source='batch.name', read_only=True)
+    full_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Student
         fields = [
             'id', 'user', 'college', 'college_name', 'batch', 'batch_name',
-            'roll_no', 'phone_number'
+            'roll_no', 'phone_number', 'date_of_birth', 'address', 
+            'emergency_contact', 'emergency_contact_name', 'admission_date',
+            'is_active', 'full_name', 'created_at', 'updated_at'
         ]
+    
+    def get_full_name(self, obj):
+        return obj.user.get_full_name()
 
 
 class FacultySerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
     college_name = serializers.CharField(source='college.name', read_only=True)
     subjects_list = SubjectSerializer(source='subjects', many=True, read_only=True)
+    full_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Faculty
         fields = [
             'id', 'user', 'college', 'college_name', 'designation', 'status',
-            'education_details', 'subjects', 'subjects_list'
+            'education_details', 'experience_years', 'specialization', 'subjects', 
+            'subjects_list', 'full_name', 'created_at', 'updated_at'
         ]
+    
+    def get_full_name(self, obj):
+        return obj.user.get_full_name()
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -161,3 +192,197 @@ class UserProfileSerializer(serializers.ModelSerializer):
         if hasattr(obj, 'faculty_profile'):
             return FacultySerializer(obj.faculty_profile).data
         return None
+
+
+# -------------------------------------------------
+# NEW SERIALIZERS FOR ENHANCED FUNCTIONALITY
+# -------------------------------------------------
+
+class ModuleSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    question_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Module
+        fields = [
+            'id', 'subject', 'subject_name', 'name', 'description', 'order',
+            'is_active', 'question_count', 'created_at', 'updated_at'
+        ]
+    
+    def get_question_count(self, obj):
+        return obj.questions.count()
+
+
+class QuestionBankSerializer(serializers.ModelSerializer):
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    module_name = serializers.CharField(source='module.name', read_only=True)
+    college_name = serializers.CharField(source='college.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = QuestionBank
+        fields = [
+            'id', 'college', 'college_name', 'subject', 'subject_name', 'module', 'module_name',
+            'question_text', 'question_type', 'difficulty', 'option_a', 'option_b', 'option_c', 'option_d',
+            'correct_answer', 'explanation', 'video_url', 'image_url', 'created_by', 'created_by_name',
+            'is_active', 'created_at', 'updated_at'
+        ]
+
+
+class BulkUploadTemplateSerializer(serializers.ModelSerializer):
+    college_name = serializers.CharField(source='college.name', read_only=True)
+    
+    class Meta:
+        model = BulkUploadTemplate
+        fields = [
+            'id', 'template_type', 'college', 'college_name', 'file_path', 
+            'status', 'error_log', 'created_at', 'updated_at'
+        ]
+
+
+# -------------------------------------------------
+# STUDENT REGISTRATION SERIALIZER
+# -------------------------------------------------
+class StudentRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password_confirm = serializers.CharField(write_only=True)
+    username = serializers.CharField(write_only=True)
+    email = serializers.EmailField(write_only=True)
+    first_name = serializers.CharField(write_only=True)
+    last_name = serializers.CharField(write_only=True)
+    college_id = serializers.IntegerField(write_only=True)
+    batch_id = serializers.IntegerField(write_only=True, required=False)
+    
+    class Meta:
+        model = Student
+        fields = [
+            'username', 'email', 'first_name', 'last_name', 'password', 'password_confirm',
+            'college_id', 'batch_id', 'roll_no', 'phone_number', 'date_of_birth', 
+            'address', 'emergency_contact', 'emergency_contact_name', 'admission_date'
+        ]
+    
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError("Passwords don't match.")
+        return attrs
+    
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+    
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("A user with this username already exists.")
+        return value
+    
+    def validate_roll_no(self, value):
+        if Student.objects.filter(roll_no=value).exists():
+            raise serializers.ValidationError("A student with this roll number already exists.")
+        return value
+    
+    def create(self, validated_data):
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Create user
+            user_data = {
+                'username': validated_data.pop('username'),
+                'email': validated_data.pop('email'),
+                'first_name': validated_data.pop('first_name'),
+                'last_name': validated_data.pop('last_name'),
+                'password': validated_data.pop('password'),
+                'role': 'student'
+            }
+            validated_data.pop('password_confirm')
+            
+            user = User.objects.create_user(**user_data)
+            
+            # Create student profile
+            college_id = validated_data.pop('college_id')
+            batch_id = validated_data.pop('batch_id', None)
+            
+            college = College.objects.get(id=college_id)
+            batch = Batch.objects.get(id=batch_id) if batch_id else None
+            
+            student = Student.objects.create(
+                user=user,
+                college=college,
+                batch=batch,
+                **validated_data
+            )
+            
+            return student
+
+
+# -------------------------------------------------
+# FACULTY REGISTRATION SERIALIZER
+# -------------------------------------------------
+class FacultyRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password_confirm = serializers.CharField(write_only=True)
+    username = serializers.CharField(write_only=True)
+    email = serializers.EmailField(write_only=True)
+    first_name = serializers.CharField(write_only=True)
+    last_name = serializers.CharField(write_only=True)
+    college_id = serializers.IntegerField(write_only=True)
+    subject_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+    
+    class Meta:
+        model = Faculty
+        fields = [
+            'username', 'email', 'first_name', 'last_name', 'password', 'password_confirm',
+            'college_id', 'designation', 'status', 'education_details', 
+            'experience_years', 'specialization', 'subject_ids'
+        ]
+    
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError("Passwords don't match.")
+        return attrs
+    
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+    
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("A user with this username already exists.")
+        return value
+    
+    def create(self, validated_data):
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Create user
+            user_data = {
+                'username': validated_data.pop('username'),
+                'email': validated_data.pop('email'),
+                'first_name': validated_data.pop('first_name'),
+                'last_name': validated_data.pop('last_name'),
+                'password': validated_data.pop('password'),
+                'role': 'faculty'
+            }
+            validated_data.pop('password_confirm')
+            
+            user = User.objects.create_user(**user_data)
+            
+            # Create faculty profile
+            college_id = validated_data.pop('college_id')
+            subject_ids = validated_data.pop('subject_ids', [])
+            
+            college = College.objects.get(id=college_id)
+            
+            faculty = Faculty.objects.create(
+                user=user,
+                college=college,
+                **validated_data
+            )
+            
+            # Assign subjects
+            if subject_ids:
+                subjects = Subject.objects.filter(id__in=subject_ids, college=college)
+                faculty.subjects.set(subjects)
+            
+            return faculty
