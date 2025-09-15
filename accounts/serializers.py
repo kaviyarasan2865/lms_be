@@ -175,8 +175,16 @@ class SubjectSerializer(serializers.ModelSerializer):
         return obj.modules.count()
 
 
+class UserNestedSerializer(serializers.ModelSerializer):
+    """Nested serializer for User fields in Student"""
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        read_only_fields = ['id', 'username', 'email', 'first_name', 'last_name']
+
+
 class StudentSerializer(serializers.ModelSerializer):
-    user = serializers.StringRelatedField(read_only=True)
+    user = UserNestedSerializer(read_only=True)
     college_name = serializers.CharField(source='college.name', read_only=True)
     batch_name = serializers.CharField(source='batch.name', read_only=True)
     full_name = serializers.SerializerMethodField()
@@ -191,11 +199,11 @@ class StudentSerializer(serializers.ModelSerializer):
         ]
     
     def get_full_name(self, obj):
-        return obj.user.get_full_name()
+        return obj.user.get_full_name() if obj.user else ''
 
 
 class FacultySerializer(serializers.ModelSerializer):
-    user = serializers.StringRelatedField(read_only=True)
+    user = UserNestedSerializer(read_only=True)
     college_name = serializers.CharField(source='college.name', read_only=True)
     subjects_list = SubjectSerializer(source='subjects', many=True, read_only=True)
     full_name = serializers.SerializerMethodField()
@@ -209,7 +217,7 @@ class FacultySerializer(serializers.ModelSerializer):
         ]
     
     def get_full_name(self, obj):
-        return obj.user.get_full_name()
+        return obj.user.get_full_name() if obj.user else ''
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -359,7 +367,83 @@ class StudentRegistrationSerializer(serializers.ModelSerializer):
                 **validated_data
             )
             
-            return student
+        return student
+
+
+# -------------------------------------------------
+# STUDENT UPDATE SERIALIZER
+# -------------------------------------------------
+class StudentUpdateSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(write_only=True, required=False)
+    email = serializers.EmailField(write_only=True, required=False)
+    first_name = serializers.CharField(write_only=True, required=False)
+    last_name = serializers.CharField(write_only=True, required=False)
+    college_id = serializers.IntegerField(write_only=True, required=False)
+    batch_id = serializers.IntegerField(write_only=True, required=False)
+    
+    class Meta:
+        model = Student
+        fields = [
+            'username', 'email', 'first_name', 'last_name',
+            'college_id', 'batch_id', 'roll_no', 'phone_number', 'date_of_birth', 
+            'address', 'emergency_contact', 'emergency_contact_name', 'admission_date'
+        ]
+    
+    def validate_email(self, value):
+        # Only validate uniqueness if email is being changed
+        if value and self.instance and self.instance.user.email != value:
+            if User.objects.filter(email=value).exists():
+                raise serializers.ValidationError("A user with this email already exists.")
+        return value
+    
+    def validate_username(self, value):
+        # Only validate uniqueness if username is being changed
+        if value and self.instance and self.instance.user.username != value:
+            if User.objects.filter(username=value).exists():
+                raise serializers.ValidationError("A user with this username already exists.")
+        return value
+    
+    def validate_roll_no(self, value):
+        # Only validate uniqueness if roll_no is being changed
+        if value and self.instance and self.instance.roll_no != value:
+            if Student.objects.filter(roll_no=value).exists():
+                raise serializers.ValidationError("A student with this roll number already exists.")
+        return value
+    
+    def update(self, instance, validated_data):
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Update user data
+            user_data = {}
+            if 'username' in validated_data:
+                user_data['username'] = validated_data.pop('username')
+            if 'email' in validated_data:
+                user_data['email'] = validated_data.pop('email')
+            if 'first_name' in validated_data:
+                user_data['first_name'] = validated_data.pop('first_name')
+            if 'last_name' in validated_data:
+                user_data['last_name'] = validated_data.pop('last_name')
+            
+            if user_data:
+                for attr, value in user_data.items():
+                    setattr(instance.user, attr, value)
+                instance.user.save()
+            
+            # Update student profile
+            if 'college_id' in validated_data:
+                college_id = validated_data.pop('college_id')
+                instance.college = College.objects.get(id=college_id)
+            
+            if 'batch_id' in validated_data:
+                batch_id = validated_data.pop('batch_id')
+                instance.batch = Batch.objects.get(id=batch_id) if batch_id else None
+            
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            
+            return instance
 
 
 # -------------------------------------------------

@@ -15,7 +15,7 @@ from .models import (
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
     CollegeSerializer, BatchSerializer, BatchCreateSerializer, AcademicYearSerializer,
-    StudentSerializer, FacultySerializer, SubjectSerializer,
+    StudentSerializer, StudentUpdateSerializer, FacultySerializer, SubjectSerializer,
     ModuleSerializer, QuestionBankSerializer, BulkUploadTemplateSerializer,
     StudentRegistrationSerializer, FacultyRegistrationSerializer
 )
@@ -210,8 +210,12 @@ class StudentListCreateView(generics.ListCreateAPIView):
 
 
 class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = StudentSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return StudentUpdateSerializer
+        return StudentSerializer
 
     def get_queryset(self):
         if self.request.user.role == 'product_owner':
@@ -219,6 +223,20 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
         elif self.request.user.role == 'college_admin' and hasattr(self.request.user, 'college_admin_profile'):
             return Student.objects.filter(college=self.request.user.college_admin_profile.college)
         return Student.objects.none()
+    
+    def perform_destroy(self, instance):
+        """Custom delete to properly handle user and student deletion"""
+        try:
+            with transaction.atomic():
+                # Get the user before deleting the student
+                user = instance.user
+                # Delete the student first
+                instance.delete()
+                # Then delete the associated user
+                if user:
+                    user.delete()
+        except Exception as e:
+            raise Exception(f"Failed to delete student: {str(e)}")
 
 
 # Faculty Management Views
