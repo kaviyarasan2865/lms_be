@@ -124,7 +124,6 @@ class Student(models.Model):
 # 7. FACULTY
 # -------------------------------------------------
 class Faculty(models.Model):
-    department = models.CharField(max_length=100, blank=True, null=True)
     DESIGNATION_CHOICES = [
         ("assistant_professor", "Assistant Professor"),
         ("professor", "Professor"),

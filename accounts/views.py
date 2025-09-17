@@ -17,7 +17,7 @@ from .serializers import (
     CollegeSerializer, BatchSerializer, BatchCreateSerializer, AcademicYearSerializer,
     StudentSerializer, StudentUpdateSerializer, FacultySerializer, SubjectSerializer,
     ModuleSerializer, QuestionBankSerializer, BulkUploadTemplateSerializer,
-    StudentRegistrationSerializer, FacultyRegistrationSerializer
+    StudentRegistrationSerializer, FacultyRegistrationSerializer, FacultyUpdateSerializer
 )
 
 
@@ -241,8 +241,12 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 # Faculty Management Views
 class FacultyListCreateView(generics.ListCreateAPIView):
-    serializer_class = FacultySerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return FacultyRegistrationSerializer
+        return FacultySerializer
 
     def get_queryset(self):
         if self.request.user.role == 'product_owner':
@@ -253,12 +257,19 @@ class FacultyListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         if self.request.user.role == 'college_admin' and hasattr(self.request.user, 'college_admin_profile'):
-            serializer.save(college=self.request.user.college_admin_profile.college)
+            # The FacultyRegistrationSerializer will get college_id from context
+            serializer.save()
+        else:
+            raise PermissionError("Only college admins can create faculty")
 
 
 class FacultyDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = FacultySerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return FacultyUpdateSerializer
+        return FacultySerializer
 
     def get_queryset(self):
         if self.request.user.role == 'product_owner':
@@ -266,6 +277,20 @@ class FacultyDetailView(generics.RetrieveUpdateDestroyAPIView):
         elif self.request.user.role == 'college_admin' and hasattr(self.request.user, 'college_admin_profile'):
             return Faculty.objects.filter(college=self.request.user.college_admin_profile.college)
         return Faculty.objects.none()
+    
+    def perform_destroy(self, instance):
+        """Custom delete to properly handle user and faculty deletion"""
+        try:
+            with transaction.atomic():
+                # Get the user before deleting the faculty
+                user = instance.user
+                # Delete the faculty first
+                instance.delete()
+                # Then delete the associated user
+                if user:
+                    user.delete()
+        except Exception as e:
+            raise Exception(f"Failed to delete faculty: {str(e)}")
 
 
 # Subject Management Views

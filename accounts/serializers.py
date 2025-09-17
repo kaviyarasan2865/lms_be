@@ -177,10 +177,11 @@ class SubjectSerializer(serializers.ModelSerializer):
 
 class UserNestedSerializer(serializers.ModelSerializer):
     """Nested serializer for User fields in Student"""
+    phone_number = serializers.CharField(read_only=True)
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
-        read_only_fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone_number']
+        read_only_fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone_number']
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -205,21 +206,23 @@ class StudentSerializer(serializers.ModelSerializer):
 class FacultySerializer(serializers.ModelSerializer):
     user = UserNestedSerializer(read_only=True)
     college_name = serializers.CharField(source='college.name', read_only=True)
-    subjects_list = SubjectSerializer(source='subjects', many=True, read_only=True)
-    full_name = serializers.SerializerMethodField()
+    department = serializers.CharField(read_only=True)
+    subjects = serializers.SerializerMethodField()
+    subjects_list = serializers.SerializerMethodField()
     
-    department = serializers.CharField(source='user.department', read_only=True, default='')
-    phone_number = serializers.CharField(source='user.phone_number', read_only=True, default='')
     class Meta:
         model = Faculty
         fields = [
             'id', 'user', 'college', 'college_name', 'designation', 'status',
-            'education_details', 'experience_years', 'specialization', 'subjects', 
-            'subjects_list', 'full_name', 'department', 'phone_number', 'created_at', 'updated_at'
+            'education_details', 'experience_years', 'specialization', 'department',
+            'subjects', 'subjects_list', 'created_at', 'updated_at'
         ]
+
+    def get_subjects(self, obj):
+        return [s.name for s in obj.subjects.all()]
     
-    def get_full_name(self, obj):
-        return obj.user.get_full_name() if obj.user else ''
+    def get_subjects_list(self, obj):
+        return [{'id': s.id, 'name': s.name} for s in obj.subjects.all()]
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -458,11 +461,12 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(write_only=True)
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
-    college_id = serializers.IntegerField(write_only=True)
+    college_id = serializers.IntegerField(write_only=True, required=False)
     subject_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     
     department = serializers.CharField(write_only=True, required=False, allow_blank=True)
     phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
     class Meta:
         model = Faculty
         fields = [
@@ -492,6 +496,17 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
             # Extract custom fields
             department = validated_data.pop('department', '')
             phone_number = validated_data.pop('phone_number', '')
+            
+            # Get college_id from validated_data or context
+            college_id = validated_data.pop('college_id', None)
+            if not college_id and hasattr(self, 'context') and 'request' in self.context:
+                request = self.context['request']
+                if hasattr(request.user, 'college_admin_profile'):
+                    college_id = request.user.college_admin_profile.college.id
+            
+            if not college_id:
+                raise serializers.ValidationError("College ID is required")
+            
             # Create user
             user_data = {
                 'username': validated_data.pop('username'),
@@ -504,8 +519,8 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
             }
             validated_data.pop('password_confirm')
             user = User.objects.create_user(**user_data)
+            
             # Create faculty profile
-            college_id = validated_data.pop('college_id')
             subject_ids = validated_data.pop('subject_ids', [])
             college = College.objects.get(id=college_id)
             faculty = Faculty.objects.create(
@@ -519,3 +534,86 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
                 subjects = Subject.objects.filter(id__in=subject_ids, college=college)
                 faculty.subjects.set(subjects)
             return faculty
+
+
+# -------------------------------------------------
+# FACULTY UPDATE SERIALIZER
+# -------------------------------------------------
+class FacultyUpdateSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(write_only=True, required=False)
+    email = serializers.EmailField(write_only=True, required=False)
+    first_name = serializers.CharField(write_only=True, required=False)
+    last_name = serializers.CharField(write_only=True, required=False)
+    college_id = serializers.IntegerField(write_only=True, required=False)
+    subject_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
+    department = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
+    class Meta:
+        model = Faculty
+        fields = [
+            'username', 'email', 'first_name', 'last_name', 'college_id', 
+            'designation', 'status', 'education_details', 'experience_years', 
+            'specialization', 'subject_ids', 'department', 'phone_number'
+        ]
+    
+    def validate_email(self, value):
+        # Only validate uniqueness if email is being changed
+        if value and self.instance and self.instance.user.email != value:
+            if User.objects.filter(email=value).exists():
+                raise serializers.ValidationError("A user with this email already exists.")
+        return value
+    
+    def validate_username(self, value):
+        # Only validate uniqueness if username is being changed
+        if value and self.instance and self.instance.user.username != value:
+            if User.objects.filter(username=value).exists():
+                raise serializers.ValidationError("A user with this username already exists.")
+        return value
+    
+    def update(self, instance, validated_data):
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # Extract custom fields
+            department = validated_data.pop('department', None)
+            phone_number = validated_data.pop('phone_number', None)
+            
+            # Update user data
+            user_data = {}
+            if 'username' in validated_data:
+                user_data['username'] = validated_data.pop('username')
+            if 'email' in validated_data:
+                user_data['email'] = validated_data.pop('email')
+            if 'first_name' in validated_data:
+                user_data['first_name'] = validated_data.pop('first_name')
+            if 'last_name' in validated_data:
+                user_data['last_name'] = validated_data.pop('last_name')
+            
+            if phone_number is not None:
+                user_data['phone_number'] = phone_number
+            
+            if user_data:
+                for attr, value in user_data.items():
+                    setattr(instance.user, attr, value)
+                instance.user.save()
+            
+            # Update faculty profile
+            if 'college_id' in validated_data:
+                college_id = validated_data.pop('college_id')
+                instance.college = College.objects.get(id=college_id)
+            
+            if department is not None:
+                instance.department = department
+            
+            # Handle subject assignments
+            if 'subject_ids' in validated_data:
+                subject_ids = validated_data.pop('subject_ids')
+                subjects = Subject.objects.filter(id__in=subject_ids, college=instance.college)
+                instance.subjects.set(subjects)
+            
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            
+            return instance
