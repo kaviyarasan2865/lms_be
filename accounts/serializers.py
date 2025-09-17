@@ -507,6 +507,11 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
             if not college_id:
                 raise serializers.ValidationError("College ID is required")
             
+            # Debug: Log received data
+            subject_ids = validated_data.get('subject_ids', [])
+            print(f"DEBUG: Received subject_ids: {subject_ids}")
+            print(f"DEBUG: College ID: {college_id}")
+            
             # Create user
             user_data = {
                 'username': validated_data.pop('username'),
@@ -529,10 +534,19 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
                 department=department,
                 **validated_data
             )
+            
             # Assign subjects
+            print(f"DEBUG: About to assign subjects with IDs: {subject_ids}")
             if subject_ids:
                 subjects = Subject.objects.filter(id__in=subject_ids, college=college)
+                print(f"DEBUG: Found {subjects.count()} subjects in database")
+                for subject in subjects:
+                    print(f"DEBUG: Subject: {subject.name} (ID: {subject.id})")
                 faculty.subjects.set(subjects)
+                print(f"DEBUG: Assigned {faculty.subjects.count()} subjects to faculty")
+            else:
+                print("DEBUG: No subject_ids provided")
+            
             return faculty
 
 
