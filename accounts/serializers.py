@@ -208,12 +208,14 @@ class FacultySerializer(serializers.ModelSerializer):
     subjects_list = SubjectSerializer(source='subjects', many=True, read_only=True)
     full_name = serializers.SerializerMethodField()
     
+    department = serializers.CharField(source='user.department', read_only=True, default='')
+    phone_number = serializers.CharField(source='user.phone_number', read_only=True, default='')
     class Meta:
         model = Faculty
         fields = [
             'id', 'user', 'college', 'college_name', 'designation', 'status',
             'education_details', 'experience_years', 'specialization', 'subjects', 
-            'subjects_list', 'full_name', 'created_at', 'updated_at'
+            'subjects_list', 'full_name', 'department', 'phone_number', 'created_at', 'updated_at'
         ]
     
     def get_full_name(self, obj):
@@ -459,12 +461,14 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
     college_id = serializers.IntegerField(write_only=True)
     subject_ids = serializers.ListField(child=serializers.IntegerField(), write_only=True, required=False)
     
+    department = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
     class Meta:
         model = Faculty
         fields = [
             'username', 'email', 'first_name', 'last_name', 'password', 'password_confirm',
             'college_id', 'designation', 'status', 'education_details', 
-            'experience_years', 'specialization', 'subject_ids'
+            'experience_years', 'specialization', 'subject_ids', 'department', 'phone_number'
         ]
     
     def validate(self, attrs):
@@ -484,8 +488,10 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         from django.db import transaction
-        
         with transaction.atomic():
+            # Extract custom fields
+            department = validated_data.pop('department', '')
+            phone_number = validated_data.pop('phone_number', '')
             # Create user
             user_data = {
                 'username': validated_data.pop('username'),
@@ -493,27 +499,23 @@ class FacultyRegistrationSerializer(serializers.ModelSerializer):
                 'first_name': validated_data.pop('first_name'),
                 'last_name': validated_data.pop('last_name'),
                 'password': validated_data.pop('password'),
-                'role': 'faculty'
+                'role': 'faculty',
+                'phone_number': phone_number,
             }
             validated_data.pop('password_confirm')
-            
             user = User.objects.create_user(**user_data)
-            
             # Create faculty profile
             college_id = validated_data.pop('college_id')
             subject_ids = validated_data.pop('subject_ids', [])
-            
             college = College.objects.get(id=college_id)
-            
             faculty = Faculty.objects.create(
                 user=user,
                 college=college,
+                department=department,
                 **validated_data
             )
-            
             # Assign subjects
             if subject_ids:
                 subjects = Subject.objects.filter(id__in=subject_ids, college=college)
                 faculty.subjects.set(subjects)
-            
             return faculty

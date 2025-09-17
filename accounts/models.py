@@ -124,6 +124,7 @@ class Student(models.Model):
 # 7. FACULTY
 # -------------------------------------------------
 class Faculty(models.Model):
+    department = models.CharField(max_length=100, blank=True, null=True)
     DESIGNATION_CHOICES = [
         ("assistant_professor", "Assistant Professor"),
         ("professor", "Professor"),
@@ -146,6 +147,7 @@ class Faculty(models.Model):
     education_details = models.TextField(blank=True, null=True)
     experience_years = models.PositiveIntegerField(default=0)
     specialization = models.CharField(max_length=255, blank=True, null=True)
+    department = models.CharField(max_length=100, blank=True, null=True)
 
     # subjects assigned
     subjects = models.ManyToManyField("Subject", blank=True, related_name="faculties")
